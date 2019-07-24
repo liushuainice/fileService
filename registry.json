@@ -1,0 +1,17 @@
+[
+  {
+    "appid": "app01",
+    "key": "6e6503d5ff3507172192135f83c739cfc2a1b0f2c2d5e1d59a5ec70a06180d27",
+    "status": "3",
+    "versionCode": "1.0.0.2",
+    "versionName": "版本1.0"
+  },
+  {
+    "appid": "app01",
+    "key": "12ffdce0e4da40e0ec2f0ba40e3b129e18facfbc0723d8195f35905169aa65ee",
+    "status": "2",
+    "versionCode": "1.0.0.1",
+    "versionName": "版本1.0"
+  }
+]
+

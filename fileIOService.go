@@ -202,40 +202,36 @@ func Downloads2(w http.ResponseWriter, r *http.Request) {
 
 //从后管下载文件到指定的目录下
 func DownloadFileService() {
-	// 创建一个断续器，每60秒触发一次
-	ticker := time.NewTicker(leng * time.Second)
 	url := `http://` + Config.Ip + `:` + Config.Port +
 		`/publish/_list.json?userId=` + Config.UserId
 	for {
-		select {
-		case <-ticker.C: // 断续器触发了
-			if b, e := httpGetDB(url); e == nil {
-				var apps []AppStatus
-				if e := json.Unmarshal(b, &apps); e != nil {
-					log.Println(`>>>json.Unmarshal err:`, e, " >>bate: ", string(b), " > url :", url)
-					continue
-				}
-				for _, app := range apps {
-					if app.Status == Config.Status {
-						fileName := app.AppId + "-" + app.VersionCode + ".zip"
-						//判断文件是否存在，存在就continue
-						if isExist(uploadPath+"/"+fileName) && getFileStat(uploadPath+"/"+fileName) > 10 {
-							log.Println(`>>> `, uploadPath+"/"+fileName, "已存在")
-							continue
-						}
-						log.Println(">>>>> start download file:", fileName)
-						url2 := `http://` + Config.Ip + `:` + Config.Port +
-							`/publish/file.zip?appId=` + app.AppId +
-							`&userId=` + Config.UserId + `&versionCode=` + app.VersionCode
-						log.Println(">>>>> start download url:", url2)
-						httpDownlodFile(fileName, url2) //下载文件到对应的路径下
-					}
-				}
-			} else {
-				log.Println("-->", url, "response error :")
-				log.Println(`		`, e, "<--")
+		if b, e := httpGetDB(url); e == nil {
+			var apps []AppStatus
+			if e := json.Unmarshal(b, &apps); e != nil {
+				log.Println(`>>>json.Unmarshal err:`, e, " >>bate: ", string(b), " > url :", url)
+				continue
 			}
+			for _, app := range apps {
+				if app.Status == Config.Status {
+					fileName := app.AppId + "-" + app.VersionCode + ".zip"
+					//判断文件是否存在，存在就continue
+					if isExist(uploadPath+"/"+fileName) && getFileStat(uploadPath+"/"+fileName) > 10 {
+						log.Println(`>>> `, uploadPath+"/"+fileName, "已存在")
+						continue
+					}
+					log.Println(">>>>> start download file:", fileName)
+					url2 := `http://` + Config.Ip + `:` + Config.Port +
+						`/publish/file.zip?appId=` + app.AppId +
+						`&userId=` + Config.UserId + `&versionCode=` + app.VersionCode
+					log.Println(">>>>> start download url:", url2)
+					httpDownlodFile(fileName, url2) //下载文件到对应的路径下
+				}
+			}
+		} else {
+			log.Println("-->", url, "response error :")
+			log.Println(`		`, e, "<--")
 		}
+		time.Sleep(leng * time.Second)
 	}
 }
 
