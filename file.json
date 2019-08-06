@@ -1,7 +1,7 @@
 {
-  "ip":"10.1.1.22",
+  "ip":"10.1.1.203",
   "port":"8081",
-  "user_id":"csii",
+  "c_ids":["csii"],
   "status":"2",
   "leng":30,
   "ser_port": "18888"

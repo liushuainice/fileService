@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -16,7 +17,7 @@ import (
 var (
 	AppIds       string
 	VserionCodes string
-	UserId       string
+	CId          string
 )
 
 const (
@@ -40,14 +41,15 @@ func main() {
 	}
 	//1,判断并创建tmp文件夹
 	createFile(uploadPath)
-	//2,启动轮训服务，查询下载文件到tmp里
-	go DownloadFileService()
+	//2,轮训服务下载到tmp里
+	for _, cid := range Config.CIds {
+		go DownloadFileService(cid)
+	}
 	//3,暴露下载路由，外部可以下载静态文件
 	http.Handle("/downloads/",
 		http.StripPrefix("/downloads/",
 			http.FileServer(http.Dir(uploadPath))))
 	http.HandleFunc("/download/gray.dat", DownloadsGray)       //第一，获取灰度文件
-	http.HandleFunc("/download/gray.json", DownloadsGrayJson)  //第一，获取灰度文件
 	http.HandleFunc("/download/central.dat", DownloadsCentral) //第二，获取Central文件
 	http.HandleFunc("/", DownloadOther)                        //第三，获取其他文件
 	log.Println("Server started on " + GetOutboundIP().String() + ":" + Config.SerPort)
@@ -71,12 +73,11 @@ func DownloadOther(w http.ResponseWriter, r *http.Request) {
 	if AppIds+VserionCodes != "" {
 		file01 = AppIds + "-" + VserionCodes
 	}
-	path := uploadPath + "/" + UserId + "/" + file01
+	path := uploadPath + "/" + CId + "/" + AppIds + "/" + file01
 	newUrl := strings.Replace(url.Path, `/download`, path, 1)
 	log.Println("MissRoute2==> downloads:", newUrl)
 	fp, err := os.OpenFile(newUrl, os.O_RDONLY, 0755)
 	if err != nil {
-		//w.Write([]byte("error"))
 		w.WriteHeader(404)
 
 		return
@@ -109,11 +110,10 @@ func DownloadsCentral(w http.ResponseWriter, r *http.Request) {
 	if AppIds+VserionCodes != "" {
 		file01 = AppIds + "-" + VserionCodes
 	}
-	path := uploadPath + "/" + UserId + "/" + file01 + "/central.dat"
+	path := uploadPath + "/" + CId + "/" + appId + "/" + file01 + "/central.dat"
 	log.Println("--> downloads:", path)
 	fp, err := os.OpenFile(path, os.O_RDONLY, 0755)
 	if err != nil {
-		//w.Write([]byte("error"))
 		w.WriteHeader(404)
 		return
 	}
@@ -126,7 +126,6 @@ func DownloadsCentral(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			log.Println("read file err:", err)
-			//w.Write([]byte("error"))
 			w.WriteHeader(404)
 			return
 		}
@@ -137,9 +136,12 @@ func DownloadsCentral(w http.ResponseWriter, r *http.Request) {
 
 func DownloadsGray(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	userId := r.Form.Get("userId")
-	UserId = userId
-	path := uploadPath + "/" + userId + "/gray.dat"
+	//cId appId
+	appId := r.Form.Get("appId")
+	cId := r.Form.Get("cId")
+	CId = cId
+	//AppIds=appId
+	path := uploadPath + "/" + cId + "/" + appId + "/gray.dat"
 	log.Println("--> downloads:", path)
 	fp, err := os.OpenFile(path, os.O_RDONLY, 0755)
 	if err != nil {
@@ -155,39 +157,7 @@ func DownloadsGray(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			log.Println("read file err:", err)
-			//w.Write([]byte("error"))
 			w.WriteHeader(404)
-
-			return
-		}
-		datas = append(datas, data[:n]...)
-	}
-	w.Write(datas)
-}
-
-func DownloadsGrayJson(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	userId := r.Form.Get("userId")
-	UserId = userId
-	path := uploadPath + "/" + userId + "/gray.json"
-	log.Println("--> downloads:", path)
-	fp, err := os.OpenFile(path, os.O_RDONLY, 0755)
-	if err != nil {
-		w.WriteHeader(404)
-		return
-	}
-	var datas []byte
-	for {
-		data := make([]byte, 4096)
-		n, err := fp.Read(data)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			log.Println("read file err:", err)
-			//w.Write([]byte("error"))
-			w.WriteHeader(404)
-
 			return
 		}
 		datas = append(datas, data[:n]...)
@@ -196,35 +166,45 @@ func DownloadsGrayJson(w http.ResponseWriter, r *http.Request) {
 }
 
 //从后管下载文件到指定的目录下
-func DownloadFileService() {
-	url := `http://` + Config.Ip + `:` + Config.Port +
-		`/publish/_list.json?userId=` + Config.UserId
+func DownloadFileService(cid string) {
+	url := `http://` + Config.Ip + `:` + Config.Port + `/publish/_list.json?cId=` + cid
 	for {
 		if b, e := httpGetDB(url); e == nil {
 			var apps []AppStatus
 			if e := json.Unmarshal(b, &apps); e != nil {
-				log.Println(`>>>json.Unmarshal err:`, e, " >>bate: ", string(b), " > url :", url)
+				log.Println(`001 json.Unmarshal err:`, e)
+				time.Sleep(leng * time.Second)
 				continue
 			}
+
 			for _, app := range apps {
 				if app.Status == Config.Status {
 					fileName := app.AppId + "-" + app.VersionCode + ".zip"
-					//判断文件是否存在，存在就continue
-					if isExist(uploadPath+"/"+fileName) && getFileStat(uploadPath+"/"+fileName) > 10 {
-						log.Println(`>>> `, uploadPath+"/"+fileName, "已存在")
-						continue
+					//下载灰度文件
+					urlGray := `http://` + Config.Ip + `:` + Config.Port + `/publish/gray.dat?cId=` + cid + `&appId=` + app.AppId
+					grayName := "gray.dat"
+					basePath := uploadPath + "/" + cid + "/" + app.AppId
+					if isExist(basePath + "/" + grayName) {
+						os.Remove(basePath + "/" + grayName)
 					}
-					log.Println(">>>>> start download file:", fileName)
-					url2 := `http://` + Config.Ip + `:` + Config.Port +
-						`/publish/file.zip?appId=` + app.AppId +
-						`&userId=` + Config.UserId + `&versionCode=` + app.VersionCode
-					log.Println(">>>>> start download url:", url2)
-					httpDownlodFile(fileName, url2) //下载文件到对应的路径下
+					log.Println(">>>>> start download urlGray:", urlGray)
+					httpDownlodFile(grayName, urlGray, basePath)
+
+					//判断文件是否存在，存在就continue
+					if isExist(basePath + "/" + app.AppId + "-" + app.VersionCode) {
+						log.Println(`>>> `, basePath+"/"+app.AppId+"-"+app.VersionCode, "已存在")
+						time.Sleep(leng * time.Second)
+						continue
+					} else if isExist(basePath + "/" + fileName) { //文件夹不存在而压缩包存在
+						os.Remove(basePath + "/" + fileName) //删除压缩包
+					}
+					url2 := `http://` + Config.Ip + `:` + Config.Port + `/publish/file.zip?appId=` + app.AppId + `&cId=` + cid + `&versionCode=` + app.VersionCode
+					log.Println(">>>>> start download urlFile:", url2)
+					httpDownlodFile(fileName, url2, basePath) //下载文件到对应的路径下
 				}
 			}
 		} else {
-			log.Println("-->", url, "response error :")
-			log.Println(`		`, e, "<--")
+			log.Println(`-->`, e, "<--")
 		}
 		time.Sleep(leng * time.Second)
 	}
@@ -264,15 +244,21 @@ func httpGetDB(url string) (result []byte, err error) {
 }
 
 //下载文件
-func httpDownlodFile(fileName, url string) (err error) {
+func httpDownlodFile(fileName, url, path string) (err error) {
 	resp, err1 := http.Get(url)
 	if err1 != nil {
+		fmt.Println(err1)
 		err = err1
 		return
 	}
 	defer resp.Body.Close()
-	f, err3 := os.Create(uploadPath + "/" + fileName)
-	//f, err3 := os.OpenFile(uploadPath+"/"+fileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0755)
+
+	if err4 := createFile(path); err4 != nil {
+		err = err4
+		return
+	}
+	f, err3 := os.Create(path + "/" + fileName)
+	//f, err3 := os.OpenFile(path+"/"+fileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0755)
 	if err3 != nil {
 		err = err3
 		return
@@ -289,9 +275,8 @@ func httpDownlodFile(fileName, url string) (err error) {
 		}
 		f.Write(buf[:n])
 	}
-	//len(fileName)
 	if len(fileName) > 4 && fileName[len(fileName)-3:] == "zip" {
-		Unzip(uploadPath+"/"+fileName, uploadPath)
+		Unzip(path+"/"+fileName, path)
 	}
 	return
 }
@@ -356,18 +341,18 @@ func Unzip(zipFile string, destDir string) error {
 }
 
 type config struct {
-	Ip      string `json:"ip"`
-	Port    string `json:"port"`
-	SerPort string `json:"ser_port"`
-	UserId  string `json:"user_id"`
-	Status  string `json:"status"`
-	Leng    int    `json:"leng"`
+	Ip      string   `json:"ip"`
+	Port    string   `json:"port"`
+	SerPort string   `json:"ser_port"`
+	CIds    []string `json:"c_ids"`
+	Status  string   `json:"status"`
+	Leng    int      `json:"leng"`
 }
 
 // Config 全局配置
 var Config *config
 
-// Parse 指定配置文件filename执行解析
+//指定配置文件filename执行解析
 func (c *config) parse(filename string) error {
 	file, _ := os.Open(filename)
 	decoder := json.NewDecoder(file)
@@ -382,7 +367,7 @@ func (c *config) parse(filename string) error {
 	return nil
 }
 
-// Parse 初始化配置实例
+//初始化配置实例
 func Parse() error {
 	//flag.Parse() //解析命令行参数使用
 	filename := "./file.json"
@@ -401,82 +386,3 @@ func Parse() error {
 	}
 	return nil
 }
-
-/*func main1() {
-	//0,读取配置文件
-	if err := Parse(); err != nil {
-		log.Fatal(err)
-	} else {
-		log.Println(`---> config: `, *Config)
-	}
-	//1,判断并创建tmp文件夹
-	createFile(uploadPath)
-	//2,启动轮训服务，查询下载文件到tmp里
-	//go DownloadFileService()
-	//3,暴露下载路由，外部可以下载静态文件
-	router := gin.Default()
-	router.StaticFS("/downloads", http.Dir(uploadPath))
-	router.GET("/download/central.dat", Downloads)
-	router.NoRoute(MissRoute) //其他所有路由都走这个方法
-	log.Println("Server started on " + GetOutboundIP().String() + ":" + Config.SerPort + ", use  /download/{fileName} for downloading")
-	log.Fatal(router.Run(":" + Config.SerPort))
-}*/
-
-/*//第一次文件下载的路由
-func Downloads(c *gin.Context) {
-	appId := c.Query("appId")
-	vserionCode := c.Query("vserionCode")
-	AppIds = appId
-	VserionCodes = vserionCode
-	fmt.Println("--> downloads:", uploadPath+"/"+appId+"-"+vserionCode+"/central.dat")
-	fp, err := os.OpenFile(uploadPath+"/"+appId+"-"+vserionCode+"/central.dat", os.O_RDONLY, 0755)
-	if err != nil {
-		c.Writer.Write([]byte("error"))
-		return
-	}
-	var datas []byte
-	for {
-		data := make([]byte, 4096)
-		n, err := fp.Read(data)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			log.Println("read file err:", err)
-			c.Writer.Write([]byte("error"))
-			return
-		}
-		datas = append(datas, data[:n]...)
-	}
-
-	c.Writer.Write(datas)
-	c.Status(200)
-}*/
-
-/*//第二次后文件下载路由
-func MissRoute(c *gin.Context) {
-	url := c.Request.URL
-	newUrl := strings.Replace(url.Path, `/download`, uploadPath+"/"+AppIds+"-"+VserionCodes, 1)
-	fmt.Println("==> downloads:", newUrl)
-	fp, err := os.OpenFile(newUrl, os.O_RDONLY, 0755)
-	if err != nil {
-		c.Writer.Write([]byte("error"))
-		return
-	}
-	var datas []byte
-	for {
-		data := make([]byte, 4096)
-		n, err := fp.Read(data)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			log.Println("read file err:", err)
-			c.Writer.Write([]byte("error"))
-			return
-		}
-		datas = append(datas, data[:n]...)
-	}
-
-	c.Writer.Write(datas)
-}*/
