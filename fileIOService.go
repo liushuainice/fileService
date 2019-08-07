@@ -27,7 +27,7 @@ const (
 
 type AppStatus struct {
 	AppId       string `json:"appid"`
-	VersionCode string `json:"versionCode"`
+	VersionCode string `json:"index"`
 	VersionName string `json:"versionName"`
 	Status      string `json:"status"`
 }
@@ -185,22 +185,29 @@ func DownloadFileService(cid string) {
 					grayName := "gray.dat"
 					basePath := uploadPath + "/" + cid + "/" + app.AppId
 					if isExist(basePath + "/" + grayName) {
-						os.Remove(basePath + "/" + grayName)
+						_ = os.Remove(basePath + "/" + grayName)
 					}
 					log.Println(">>>>> start download urlGray:", urlGray)
-					httpDownlodFile(grayName, urlGray, basePath)
-
+					_ = httpDownlodFile(grayName, urlGray, basePath)
+					//判断文件-over是否存在
+					if isExist(basePath + "/" + app.AppId + "-" + app.VersionCode + "-over") {
+						_ = os.Rename(basePath+"/"+app.AppId+"-"+app.VersionCode+"-over", app.AppId+"-"+app.VersionCode)
+					}
 					//判断文件是否存在，存在就continue
 					if isExist(basePath + "/" + app.AppId + "-" + app.VersionCode) {
 						log.Println(`>>> `, basePath+"/"+app.AppId+"-"+app.VersionCode, "已存在")
 						time.Sleep(leng * time.Second)
 						continue
 					} else if isExist(basePath + "/" + fileName) { //文件夹不存在而压缩包存在
-						os.Remove(basePath + "/" + fileName) //删除压缩包
+						_ = os.Remove(basePath + "/" + fileName) //删除压缩包
 					}
 					url2 := `http://` + Config.Ip + `:` + Config.Port + `/publish/file.zip?appId=` + app.AppId + `&cId=` + cid + `&versionCode=` + app.VersionCode
 					log.Println(">>>>> start download urlFile:", url2)
-					httpDownlodFile(fileName, url2, basePath) //下载文件到对应的路径下
+					_ = httpDownlodFile(fileName, url2, basePath) //下载文件到对应的路径下
+				} else if app.Status == Config.Destory { //改名字
+					fileName := app.AppId + "-" + app.VersionCode
+					folder := uploadPath + "/" + cid + "/" + app.AppId + "/" + fileName
+					_ = os.Rename(folder, fileName+"-over")
 				}
 			}
 		} else {
@@ -263,6 +270,7 @@ func httpDownlodFile(fileName, url, path string) (err error) {
 		err = err3
 		return
 	}
+	log.Println("save :", path+"/"+fileName)
 	buf := make([]byte, 4096)
 	for {
 		n, err2 := resp.Body.Read(buf)
@@ -346,6 +354,7 @@ type config struct {
 	SerPort string   `json:"ser_port"`
 	CIds    []string `json:"c_ids"`
 	Status  string   `json:"status"`
+	Destory string   `json:"destory"`
 	Leng    int      `json:"leng"`
 }
 

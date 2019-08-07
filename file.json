@@ -3,6 +3,7 @@
   "port":"8081",
   "c_ids":["csii"],
   "status":"2",
+  "destory":"3",
   "leng":30,
   "ser_port": "18888"
 }
