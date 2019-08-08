@@ -178,17 +178,9 @@ func DownloadFileService(cid string) {
 			}
 
 			for _, app := range apps {
-				if app.Status == Config.Status {
+				basePath := uploadPath + "/" + cid + "/" + app.AppId
+				if app.Status == Config.Status { //发布版本
 					fileName := app.AppId + "-" + app.VersionCode + ".zip"
-					//下载灰度文件
-					urlGray := `http://` + Config.Ip + `:` + Config.Port + `/publish/gray.dat?cId=` + cid + `&appId=` + app.AppId
-					grayName := "gray.dat"
-					basePath := uploadPath + "/" + cid + "/" + app.AppId
-					if isExist(basePath + "/" + grayName) {
-						_ = os.Remove(basePath + "/" + grayName)
-					}
-					log.Println(">>>>> start download urlGray:", urlGray)
-					_ = httpDownlodFile(grayName, urlGray, basePath)
 					//判断文件-over是否存在
 					if isExist(basePath + "/" + app.AppId + "-" + app.VersionCode + "-over") {
 						_ = os.Rename(basePath+"/"+app.AppId+"-"+app.VersionCode+"-over", app.AppId+"-"+app.VersionCode)
@@ -196,8 +188,8 @@ func DownloadFileService(cid string) {
 					//判断文件是否存在，存在就continue
 					if isExist(basePath + "/" + app.AppId + "-" + app.VersionCode) {
 						log.Println(`>>> `, basePath+"/"+app.AppId+"-"+app.VersionCode, "已存在")
-						time.Sleep(leng * time.Second)
-						continue
+						//continue
+						goto gray
 					} else if isExist(basePath + "/" + fileName) { //文件夹不存在而压缩包存在
 						_ = os.Remove(basePath + "/" + fileName) //删除压缩包
 					}
@@ -209,6 +201,15 @@ func DownloadFileService(cid string) {
 					folder := uploadPath + "/" + cid + "/" + app.AppId + "/" + fileName
 					_ = os.Rename(folder, fileName+"-over")
 				}
+			gray:
+				//下载灰度文件
+				urlGray := `http://` + Config.Ip + `:` + Config.Port + `/publish/gray.dat?cId=` + cid + `&appId=` + app.AppId
+				grayName := "gray.dat"
+				if isExist(basePath + "/" + grayName) {
+					_ = os.Remove(basePath + "/" + grayName)
+				}
+				log.Println(">>>>> start download urlGray:", urlGray)
+				_ = httpDownlodFile(grayName, urlGray, basePath)
 			}
 		} else {
 			log.Println(`-->`, e, "<--")
